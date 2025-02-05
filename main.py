@@ -13,6 +13,7 @@ from .settings import (
     REPLICATION_FACTOR,
     TOPIC_NAME,
     COMPRESSION_TYPE,
+    IGNORED_EVENTS
 )
 from kytos.core.rest_api import JSONResponse, Request
 from kytos.core import KytosNApp, log, rest
@@ -87,6 +88,9 @@ class Main(KytosNApp):
         """Handle the event of a new created switch"""
         # Optional logging:
         # log.info(f'handle_new_switch event={event} content={event.content}')
+
+        if event.name in IGNORED_EVENTS:
+            return
 
         self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._send_ops.send_message(
             TOPIC_NAME, event.name, event.name, event.content
