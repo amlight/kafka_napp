@@ -3,12 +3,14 @@
 
 import json
 import asyncio
+import time
 from threading import Thread
 
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady
 from kafka import KafkaAdminClient
 from kafka.admin.new_topic import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError
+from kafka.errors import UnknownTopicOrPartitionError, NodeNotReadyError
 
 from kytos.core.rest_api import JSONResponse, Request
 from kytos.core import KytosNApp, log, rest
@@ -134,19 +136,57 @@ class KafkaSendOperations:
         self._bootstrap_servers = bootstrap_servers
         self._compression_type = compression_type
         self._acks = acks
+
         self._producer: AIOKafkaProducer = None
-        self._admin = KafkaAdminClient(bootstrap_servers=bootstrap_servers)
+        self._admin = self._setup_admin()
+
+    def _setup_admin(self) -> KafkaAdminClient:
+        """
+        Setup the admin client and handle NodeNotReadyIssues
+        """
+        retries: int = 0
+
+        while retries < 3:
+            try:
+                return KafkaAdminClient(bootstrap_servers=self._bootstrap_servers)
+            except NodeNotReadyError as exc:
+                if retries >= 2:
+                    log.error("Kafka could not be reached after retrying 3 times.")
+                    raise exc
+                retries += 1
+                time.sleep(1)
+
+        return None
+
+    async def _setup_producer(self) -> AIOKafkaProducer:
+        """
+        Setup the producer client and handle connection issues
+        """
+        retries: int = 0
+
+        while retries < 3:
+            try:
+                producer = AIOKafkaProducer(
+                    bootstrap_servers=self._bootstrap_servers,
+                    compression_type=self._compression_type,
+                    acks=self._acks,
+                )
+                await producer.start()
+                return producer
+            except AsyncNodeNotReady as exc:
+                if retries >= 2:
+                    log.error("Kafka could not be reached after retrying 3 times.")
+                    raise exc
+                retries += 1
+                time.sleep(1)
+
+        return None
 
     async def start_up(self) -> None:
         """
         AIOKafka requires a setup procedure
         """
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=self._bootstrap_servers,
-            compression_type=self._compression_type,
-            acks=self._acks,
-        )
-        await self._producer.start()
+        self._producer = await self._setup_producer()
 
     async def create_topic(self, topic_name: str, num_partitions: int) -> None:
         """Create a topic with a provided number of partitions"""
