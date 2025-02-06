@@ -1,4 +1,3 @@
-austin@austin-vm:~/work/kytos/new_kytos/test-napp/kytos-testnapp$ cat settings.py 
 """Module with the Constants used in the italovalcy/testnapp."""
 
 # Location of the Kafka server

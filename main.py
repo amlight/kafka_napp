@@ -1,9 +1,18 @@
-"""Main module of italovalcy/testnapp Kytos Network Application.
+"""Main module of Kafka/Kytos Network Application.
 """
 
 import json
 import asyncio
 from threading import Thread
+
+from aiokafka import AIOKafkaProducer
+from kafka import KafkaAdminClient
+from kafka.admin.new_topic import NewTopic
+from kafka.errors import UnknownTopicOrPartitionError
+
+from kytos.core.rest_api import JSONResponse, Request
+from kytos.core import KytosNApp, log, rest
+from kytos.core.helpers import alisten_to
 
 from .jsonencoder import ComplexEncoder
 from .settings import (
@@ -13,15 +22,8 @@ from .settings import (
     REPLICATION_FACTOR,
     TOPIC_NAME,
     COMPRESSION_TYPE,
-    IGNORED_EVENTS
+    IGNORED_EVENTS,
 )
-from kytos.core.rest_api import JSONResponse, Request
-from kytos.core import KytosNApp, log, rest
-from kytos.core.helpers import alisten_to
-from kafka import KafkaAdminClient
-from kafka.admin.new_topic import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError
-from aiokafka import AIOKafkaProducer
 
 
 class Main(KytosNApp):
@@ -39,6 +41,7 @@ class Main(KytosNApp):
         self._napp_context = Thread(target=self._run_loop, daemon=True)
         self._napp_context.start()
 
+        # In the threaded async loop, run setup
         self._loop.call_soon_threadsafe(
             lambda: asyncio.create_task(self._setup_dependencies())
         )
@@ -49,6 +52,10 @@ class Main(KytosNApp):
         """
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
+
+        # When stop() is called, run the shutdown phase
+        self._loop.run_until_complete(self._send_ops.shutdown())
+        self._loop.close()
 
     async def _setup_dependencies(self):
         """
@@ -68,9 +75,22 @@ class Main(KytosNApp):
         Execute when your napp is unloaded.
         """
         log.info("SHUTDOWN Kafka/Kytos")
+
+        log.info("Closing loop...")
+
+        for task in asyncio.all_tasks(self._loop):
+            try:
+                task.cancel()
+            except Exception:
+                log.warn("Task could not be canceled.")
+
+
+        # Stops the loop, which upon stopping will close the Kafka producer
         self._loop.call_soon_threadsafe(self._loop.stop)
+
+        log.info("Joining thread...")
+
         self._napp_context.join()
-        self._loop.close()
 
     @rest("/v1/", methods=["GET"])
     def handle_get(self, request: Request) -> JSONResponse:
@@ -92,9 +112,12 @@ class Main(KytosNApp):
         if event.name in IGNORED_EVENTS:
             return
 
-        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._send_ops.send_message(
-            TOPIC_NAME, event.name, event.name, event.content
-        )))
+        asyncio.run_coroutine_threadsafe(
+            self._send_ops.send_message(
+                TOPIC_NAME, event.name, event.name, event.content
+            ),
+            self._loop
+        )
 
 
 class KafkaSendOperations:
@@ -111,7 +134,7 @@ class KafkaSendOperations:
         self._bootstrap_servers = bootstrap_servers
         self._compression_type = compression_type
         self._acks = acks
-        self._producer: AIOKafkaProducer = (None,)
+        self._producer: AIOKafkaProducer = None
         self._admin = KafkaAdminClient(bootstrap_servers=bootstrap_servers)
 
     async def start_up(self) -> None:
@@ -121,7 +144,7 @@ class KafkaSendOperations:
         self._producer = AIOKafkaProducer(
             bootstrap_servers=self._bootstrap_servers,
             compression_type=self._compression_type,
-            acks=self._acks
+            acks=self._acks,
         )
         await self._producer.start()
 
@@ -144,13 +167,19 @@ class KafkaSendOperations:
         except Exception as exc:
             raise exc
 
+    async def shutdown(self):
+        """
+        Shutdown the producer
+        """
+        await self._producer.stop()
+        self._producer = None
+
     async def send_message(
         self, topic_name: str, event: str, key: str, message: any
     ) -> None:
         """
         Send a message to the specified topic name
         """
-
         json_message = json.dumps(
             {"event": event, "type": key, "message": message}, cls=ComplexEncoder
         ).encode()
