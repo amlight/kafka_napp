@@ -172,7 +172,6 @@ class KafkaSendOperations:
         Shutdown the producer
         """
         await self._producer.stop()
-        self._producer = None
 
     async def send_message(
         self, topic_name: str, event: str, key: str, message: any
