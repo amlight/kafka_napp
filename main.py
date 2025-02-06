@@ -166,11 +166,13 @@ class KafkaSendOperations:
 
         while retries < 3:
             try:
-                return AIOKafkaProducer(
+                producer = AIOKafkaProducer(
                     bootstrap_servers=self._bootstrap_servers,
                     compression_type=self._compression_type,
                     acks=self._acks,
-                ).start()
+                )
+                producer.start()
+                return producer
             except AsyncNodeNotReady as exc:
                 if retries >= 2:
                     log.error("Kafka could not be reached after retrying 3 times.")
