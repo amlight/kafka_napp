@@ -171,7 +171,7 @@ class KafkaSendOperations:
                     compression_type=self._compression_type,
                     acks=self._acks,
                 )
-                producer.start()
+                await producer.start()
                 return producer
             except AsyncNodeNotReady as exc:
                 if retries >= 2:
