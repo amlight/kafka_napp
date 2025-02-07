@@ -1,6 +1,15 @@
-﻿# Kafka_napp
+﻿# Overview
 
-A NApp built to capture, serialize, and push events and logs to a Kafka cluster through `AIOKafka`.
+This NApp integrates Kafka with the Kytos SDN platform to enable event-driven messaging and real-time event streaming.
+
+# Features
+
+- Asynchronous Kafka producer with support for compression and acknowledgments.
+- Automatic Kafka topic creation if it does not exist.
+- Event listener for new switch connections, publishing events to Kafka.
+- Resilient Kafka admin client with automatic retries for connectivity issues.
+- Threaded asyncio loop to handle asynchronous tasks without blocking Kytos.
+- Graceful shutdown ensuring Kafka producer cleanup and event loop termination.
 
 # Directions
 
