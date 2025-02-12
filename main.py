@@ -5,6 +5,7 @@ import json
 import asyncio
 import time
 from threading import Thread
+from typing import Coroutine, Callable, Awaitable
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady
@@ -38,35 +39,12 @@ class Main(KytosNApp):
         Setup the Kafka/Kytos NApp
         """
         log.info("SETUP Kytos/Kafka")
+
         self._send_ops = KafkaSendOperations(BOOTSTRAP_SERVERS, COMPRESSION_TYPE, ACKS)
-        self._loop = asyncio.new_event_loop()
-        self._napp_context = Thread(target=self._run_loop, daemon=True)
-        self._napp_context.start()
+        self._async_loop = AsyncScheduler(coroutine=self._send_ops.shutdown())
 
         # In the threaded async loop, run setup
-        self._loop.call_soon_threadsafe(
-            lambda: asyncio.create_task(self._setup_dependencies())
-        )
-
-    def _run_loop(self):
-        """
-        Run the loop in a thread
-        """
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
-
-        # When stop() is called, run the shutdown phase
-        self._loop.run_until_complete(self._send_ops.shutdown())
-        self._loop.close()
-
-    async def _setup_dependencies(self):
-        """
-        Start an asyncio loop in a separate thread, so Kytos can synchronously close
-        """
-        await self._send_ops.start_up()
-
-        if not await self._send_ops.check_for_topic(TOPIC_NAME):
-            await self._send_ops.create_topic(TOPIC_NAME, DEFAULT_NUM_PARTITIONS)
+        self._async_loop.run_callable_soon(self._send_ops.setup_dependencies)
 
     def execute(self):
         """Execute once when the napp is running."""
@@ -78,26 +56,21 @@ class Main(KytosNApp):
         """
         log.info("SHUTDOWN Kafka/Kytos")
 
-        log.info("Closing loop...")
-
-        for task in asyncio.all_tasks(self._loop):
-            try:
-                task.cancel()
-            except Exception:
-                log.warn("Task could not be canceled.")
-
-
         # Stops the loop, which upon stopping will close the Kafka producer
-        self._loop.call_soon_threadsafe(self._loop.stop)
+        try:
+            log.info("Stopping loop...")
+            self._async_loop.run_coroutine(self._async_loop.stop())
 
-        log.info("Joining thread...")
+            log.info("Joining thread...")
+            self._async_loop.close_thread()
 
-        self._napp_context.join()
+        except Exception as exc:
+            log.error(exc)
 
     @rest("/v1/", methods=["GET"])
     def handle_get(self, request: Request) -> JSONResponse:
         """Endpoint to return nothing."""
-        log.info("GET /v1/testnapp")
+        log.info("GET /v1/kafka_napp")
         return JSONResponse({"result": "Napp is running!", "Count": self._event_count})
 
     @rest("/v1/", methods=["POST"])
@@ -114,11 +87,10 @@ class Main(KytosNApp):
         if event.name in IGNORED_EVENTS:
             return
 
-        asyncio.run_coroutine_threadsafe(
+        self._async_loop.run_coroutine(
             self._send_ops.send_message(
                 TOPIC_NAME, event.name, event.name, event.content
-            ),
-            self._loop
+            )
         )
 
 
@@ -139,6 +111,15 @@ class KafkaSendOperations:
 
         self._producer: AIOKafkaProducer = None
         self._admin = self._setup_admin()
+
+    async def setup_dependencies(self):
+        """
+        Start an asyncio loop in a separate thread, so Kytos can synchronously close
+        """
+        await self.start_up()
+
+        if not await self.check_for_topic(TOPIC_NAME):
+            await self.create_topic(TOPIC_NAME, DEFAULT_NUM_PARTITIONS)
 
     def _setup_admin(self) -> KafkaAdminClient:
         """
@@ -224,3 +205,201 @@ class KafkaSendOperations:
         ).encode()
 
         await self._producer.send(topic=topic_name, value=json_message)
+
+
+class AsyncScheduler:
+    """
+    A class designed contain the loop running in a separate thread, as well as methods that
+    interact with the loop.
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop = None, thread: Thread = None, coroutine: Coroutine = None):
+        """
+        Initializer for setting up the thread and loop running inside of it. Accepts a coroutine
+        that can be run before the thread joins.
+        """
+        self._loop = loop if loop else asyncio.new_event_loop()
+        self._napp_context = (
+            thread if thread else Thread(target=self._run_loop, daemon=True, args=(coroutine,))
+        )
+        self._napp_context.start()
+
+    def _run_loop(self, coroutine: Coroutine) -> None:
+        """
+        Run the loop in a thread until stop() is called.
+
+        Args:
+            coroutine (Coroutine): The function you'd like run in the event loop before the thread joins.
+        """
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+        while self._loop.is_running():
+            time.sleep(1)
+
+        if coroutine:
+            self._loop.run_until_complete(coroutine)
+
+        self._loop.close()
+
+    def run_coroutine(self, coroutine: Coroutine) -> asyncio.Future:
+        """
+        Enqueue a coroutine to be executed in the event loop thread.
+
+        Args:
+            coroutine (Coroutine[..., None]): The coroutine function to execute.
+
+        Returns:
+            asyncio.Future: A Future representing the execution of the coroutine.
+
+        Raises:
+            RuntimeError: If the event loop is closed.
+        """
+        try:
+            return asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        except RuntimeError as exc:
+            raise exc
+
+    def _submit_coro_soon_threadsafe(
+        self, callable_function: Callable[..., Awaitable], *args
+    ) -> asyncio.Future:
+        """
+        Enqueue an async callable to be executed soon in the event loop thread.
+
+        Args:
+            callable_function (Callable[..., Awaitable]): The async function to execute.
+            *args: Arguments to pass to the async function.
+
+        Returns:
+            asyncio.Future: A Future representing the execution of the task.
+
+        Raises:
+            RuntimeError: If the event loop is closed.
+        """
+        future = asyncio.Future()
+        log.info(callable_function)
+
+        def _create_task() -> asyncio.Future:
+            """
+            Create the coroutine and return the future
+            """
+            try:
+                task = asyncio.create_task(callable_function(*args))
+                task.add_done_callback(
+                    lambda t: (
+                        future.set_result(t.result())
+                        if not t.exception()
+                        else future.set_exception(t.exception())
+                    )
+                )
+            except Exception as exc:
+                future.set_exception(exc)
+
+        try:
+            self._loop.call_soon_threadsafe(_create_task)
+        except RuntimeError as exc:
+            raise exc
+        log.info(future)
+        return future
+
+    def run_callable_soon(
+        self, callable_function: Callable[..., Awaitable], *args
+    ) -> asyncio.Future:
+        """
+        REQUIRES A CALLABLE ASYNC FUNCTION
+
+        Enqueue an async callable to be executed soon in the event loop thread and immediately
+        return
+
+        This method is used for scheduling a coroutine function to run within the loop safely.
+        Example usage:
+
+            self.run_coroutine_soon(my_async_function, arg1, arg2)
+
+        Args:
+            callable_function (Callable[..., Awaitable]): The async function to execute.
+            *args: Arguments to pass to the async function.
+
+        Returns:
+            asyncio.Future: A Future representing the execution of the task.
+
+        Raises:
+            RuntimeError: If the event loop is closed.
+        """
+        try:
+            return self._submit_coro_soon_threadsafe(callable_function, *args)
+        except RuntimeError as exc:
+            raise exc
+
+    async def run_coroutine_soon_and_wait(
+        self, callable_function: Callable[..., Awaitable], *args
+    ) -> asyncio.Future:
+        """
+        Enqueue an async callable to be executed soon in the event loop thread and immediately
+        return
+
+        This method is used for scheduling a coroutine function to run within the loop safely.
+        Example usage:
+
+            self.run_coroutine_soon(my_async_function, arg1, arg2)
+
+        Args:
+            callable_function (Callable[..., Awaitable]): The async function to execute.
+            *args: Arguments to pass to the async function.
+
+        Returns:
+            asyncio.Future: A Future representing the execution of the task.
+
+        Raises:
+            RuntimeError: If the event loop is closed.
+        """
+        try:
+            return await self._submit_coro_soon_threadsafe(callable_function, *args)
+        except RuntimeError as exc:
+            raise exc
+
+    def cancel_all_tasks(self) -> None:
+        """
+        Cancel all tasks that are pending in the asynchronous loop.
+        """
+        for task in asyncio.all_tasks(self._loop):
+            try:
+                task.cancel()
+            except Exception as exc:
+                log.warn(f"Task {task.get_name()} could not be canceled: {exc}")
+
+    async def stop(self) -> None:
+        """
+        Calls stop() on the internal async loop
+
+        Raises:
+            Exception: If an error occurs during the stop() sequence, it will be returned.
+        """
+        try:
+            self._loop.stop()
+        except Exception as exc:
+            raise exc
+
+    def close_thread(self) -> None:
+        """
+        Calls join() on the internal thread
+
+        Raises:
+            Exception: If an error occurs during the join() sequence, it will be returned.
+        """
+        try:
+            self._napp_context.join()
+        except Exception as exc:
+            raise exc
+
+    async def close_loop(self) -> None:
+        """
+        Calls close() on the internal loop
+
+        Raises:
+            Exception: If an error occurs during the close() sequence, it will be returned.
+        """
+        try:
+            self._loop.close()
+        except Exception as exc:
+            raise exc
