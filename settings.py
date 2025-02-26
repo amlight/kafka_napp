@@ -1,4 +1,4 @@
-"""Module with the Constants used in the italovalcy/testnapp."""
+"""Module with the Constants used in the kafka_napp."""
 
 # Location of the Kafka server
 BOOTSTRAP_SERVERS = "localhost:9092"
