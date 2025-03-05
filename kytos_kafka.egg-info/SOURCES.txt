@@ -1,8 +1,0 @@
-LICENSE
-README.md
-setup.py
-kytos_kafka.egg-info/PKG-INFO
-kytos_kafka.egg-info/SOURCES.txt
-kytos_kafka.egg-info/dependency_links.txt
-kytos_kafka.egg-info/not-zip-safe
-kytos_kafka.egg-info/requires.txt

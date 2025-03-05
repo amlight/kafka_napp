@@ -39,7 +39,11 @@ I. Requirements
 
 This blueprint has the following characteristics:
 
-  1. - This NApp requries a reachable Kafka cluster to be fully operational.
+  1. - This NApp requires a reachable Kafka cluster to be fully operational.
+      - In the case of an unreachable cluster, this NApp should follow the following behaviors, based on when the outage occurs:
+        - 1: On start-up: The NApp should retry connection, up to a limit of 3 times (with a 10 second connection timeout). If connection fails, then processed events should be dropped.
+        - 2: In operation: The NApp should retry connection, up to a limit of 3 times. The NApp is designed to buffer up to 32MB (max) before it sends, so if the connection fails when the buffer is full, it should log a warning and drop the message.
+        - 3: On shut-down: The NApp should retry connection, up to a limit of 3 times. The shutdown mechanic tries to close a connection and flush any remaining messages. If connection fails, then the messages should be dropped.
 
 II. How kafka_napp works with Kytos
 ===============================
@@ -122,13 +126,6 @@ V. Events
 ==========
 
   1. kafka_napp listens to all possible events. In addition, it does not currently ignore any events. If it starts ignoring events, they will be labeled here.
-
-
-VI. REST API
-=============
-
-  - ``GET /api/kytos/kafka/v1/``: Currently does nothing. Could be used to gather metrics on the NApp, like I/O, errors, etc.
-  - ``POST /api/kytos/kafka/v1/``: Currently does nothing. Could be used to manually insert events
 
 
 VII. Dependencies
@@ -277,4 +274,7 @@ XIV. Open Questions / Future Work
   2. Specifying what events are ignored
   3. When sending messages, type and event are equal.
     - Potential trimming of network I/O by removing one.
-  4. Abstracting away from Kafka to allow any message broker.
+  4. When filtering events, use Regex patterns instead of Set.
+    - Eliminates redundancy by excluding all events from particular groups, instead of listing each individually.
+  5. Add endpoints that provide clients with useful data
+    - Currently the endpoints have been removed as there is no use. However, this can change with future work.
