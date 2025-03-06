@@ -1,4 +1,10 @@
-tox==4.18.0
-pyflakes==3.2.0
-pylint==3.2.6
-pytest==8.3.2
+-e git+https://github.com/kytos-ng/python-openflow.git#egg=python-openflow
+-e git+https://github.com/kytos-ng/kytos.git#egg=kytos[dev]
+-e git+https://github.com/kytos-ng/of_core.git#egg=kytos_of_core
+-e .
+
+-r run.in
+
+pylint==3.1.0
+pytest==8.0.1
+black==24.2.0

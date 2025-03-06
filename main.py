@@ -8,13 +8,20 @@ from threading import Thread
 from typing import Coroutine, Callable, Awaitable
 
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady
+from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady, KafkaConnectionError as AsyncKafkaConnectionError, KafkaTimeoutError as AsyncKafkaTimeoutError
 from kafka import KafkaAdminClient
 from kafka.admin.new_topic import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError, NodeNotReadyError
+from kafka.errors import UnknownTopicOrPartitionError, NodeNotReadyError, KafkaConnectionError, KafkaTimeoutError
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_combine,
+    wait_fixed,
+    wait_random,
+)
 
-from kytos.core.rest_api import JSONResponse, Request
-from kytos.core import KytosNApp, log, rest
+from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
 
 from .jsonencoder import ComplexEncoder
@@ -67,17 +74,6 @@ class Main(KytosNApp):
         except Exception as exc:
             log.error(exc)
 
-    @rest("/v1/", methods=["GET"])
-    def handle_get(self, request: Request) -> JSONResponse:
-        """Endpoint to return nothing."""
-        log.info("GET /v1/kafka_napp")
-        return JSONResponse({"result": "Napp is running!", "Count": self._event_count})
-
-    @rest("/v1/", methods=["POST"])
-    def handle_post(self, request: Request) -> JSONResponse:
-        """Endpoint to return nothing."""
-        return JSONResponse("Operation successful", status_code=201)
-
     @alisten_to(".*")
     async def handle_new_switch(self, event):
         """Handle the event of a new created switch"""
@@ -121,53 +117,55 @@ class KafkaSendOperations:
         if not await self.check_for_topic(TOPIC_NAME):
             await self.create_topic(TOPIC_NAME, DEFAULT_NUM_PARTITIONS)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type((KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError))
+    )
     def _setup_admin(self) -> KafkaAdminClient:
         """
         Setup the admin client and handle NodeNotReadyIssues
         """
-        retries: int = 0
+        try:
+            return KafkaAdminClient(
+                bootstrap_servers=self._bootstrap_servers,
+                request_timeout_ms=10000
+            )
+        except (NodeNotReadyError, KafkaConnectionError, KafkaTimeoutError) as exc:
+            log.error("Kafka-python retrying connection...")
+            raise exc
 
-        while retries < 3:
-            try:
-                return KafkaAdminClient(bootstrap_servers=self._bootstrap_servers)
-            except NodeNotReadyError as exc:
-                if retries >= 2:
-                    log.error("Kafka could not be reached after retrying 3 times.")
-                    raise exc
-                retries += 1
-                time.sleep(1)
-
-        return None
-
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+    )
     async def _setup_producer(self) -> AIOKafkaProducer:
         """
         Setup the producer client and handle connection issues
         """
-        retries: int = 0
-
-        while retries < 3:
-            try:
-                producer = AIOKafkaProducer(
-                    bootstrap_servers=self._bootstrap_servers,
-                    compression_type=self._compression_type,
-                    acks=self._acks,
-                )
-                await producer.start()
-                return producer
-            except AsyncNodeNotReady as exc:
-                if retries >= 2:
-                    log.error("Kafka could not be reached after retrying 3 times.")
-                    raise exc
-                retries += 1
-                time.sleep(1)
-
-        return None
+        try:
+            producer = AIOKafkaProducer(
+                bootstrap_servers=self._bootstrap_servers,
+                compression_type=self._compression_type,
+                acks=self._acks,
+                request_timeout_ms=10000
+            )
+            await asyncio.wait_for(producer.start(), 11)
+            return producer
+        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+            log.error("AIOKafka retrying connection...")
+            raise exc
 
     async def start_up(self) -> None:
         """
         AIOKafka requires a setup procedure
         """
-        self._producer = await self._setup_producer()
+        try:
+            self._producer = await self._setup_producer()
+        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+            log.error("AIOKafkaProducer could not establish a connection.")
+            raise exc
 
     async def create_topic(self, topic_name: str, num_partitions: int) -> None:
         """Create a topic with a provided number of partitions"""
@@ -188,12 +186,26 @@ class KafkaSendOperations:
         except Exception as exc:
             raise exc
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+    )
     async def shutdown(self):
         """
         Shutdown the producer
         """
-        await self._producer.stop()
+        try:
+            await self._producer.stop()
+        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+            log.error("AIOKafka retrying shutdown procedure...")
+            raise exc
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=1, max=2)),
+        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+    )
     async def send_message(
         self, topic_name: str, event: str, key: str, message: any
     ) -> None:
@@ -203,8 +215,11 @@ class KafkaSendOperations:
         json_message = json.dumps(
             {"event": event, "type": key, "message": message}, cls=ComplexEncoder
         ).encode()
-
-        await self._producer.send(topic=topic_name, value=json_message)
+        try:
+            await self._producer.send(topic=topic_name, value=json_message)
+        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+            log.error("AIOKafkaProducer could not send the data to the cluster. Retrying...")
+            raise exc
 
 
 class AsyncScheduler:
