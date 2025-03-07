@@ -10,9 +10,11 @@ async-timeout==5.0.1
     # via aiokafka
 kafka-python-ng==2.2.3
     # via -r requirements/run.in
-packaging==24.2
-    # via aiokafka
+packaging==24.0
+    # via
+    #   -r requirements/run.in
+    #   aiokafka
 tenacity==8.2.3
     # via -r requirements/run.in
-typing-extensions==4.12.2
+typing-extensions==4.10.0
     # via aiokafka
