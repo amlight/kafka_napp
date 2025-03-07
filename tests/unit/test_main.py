@@ -1,8 +1,13 @@
-from ...main import Main
+"""
+Test suite for main.py
+"""
 
 import unittest
 import time
 from unittest.mock import patch
+
+from kafka_napp.main import Main
+
 
 class TestMain(unittest.TestCase):
     """
@@ -10,10 +15,10 @@ class TestMain(unittest.TestCase):
     """
 
     @patch("main.KytosNApp")
-    @patch("main.Main._setup_dependencies")
+    @patch("main.KafkaSendOperations.setup_dependencies")
     def test_setup_complete(self, _, setup_mock):
         """
-        Test that the setup function correct instantiates 
+        Test that the setup function correct instantiates
         """
 
         def mocked_setup_function():

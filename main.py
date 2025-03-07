@@ -8,10 +8,11 @@ from threading import Thread
 from typing import Coroutine, Callable, Awaitable
 
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady, KafkaConnectionError as AsyncKafkaConnectionError, KafkaTimeoutError as AsyncKafkaTimeoutError
-from kafka import KafkaAdminClient
-from kafka.admin.new_topic import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError, NodeNotReadyError, KafkaConnectionError, KafkaTimeoutError
+from aiokafka.errors import (
+    NodeNotReadyError as AsyncNodeNotReady,
+    KafkaConnectionError as AsyncKafkaConnectionError,
+    KafkaTimeoutError as AsyncKafkaTimeoutError,
+)
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -20,12 +21,20 @@ from tenacity import (
     wait_fixed,
     wait_random,
 )
+from kafka import KafkaAdminClient
+from kafka.admin.new_topic import NewTopic
+from kafka.errors import (
+    UnknownTopicOrPartitionError,
+    NodeNotReadyError,
+    KafkaConnectionError,
+    KafkaTimeoutError,
+)
 
 from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
 
-from .jsonencoder import ComplexEncoder
-from .settings import (
+from kafka_napp.jsonencoder import ComplexEncoder
+from kafka_napp.settings import (
     BOOTSTRAP_SERVERS,
     ACKS,
     DEFAULT_NUM_PARTITIONS,
@@ -120,7 +129,9 @@ class KafkaSendOperations:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
-        retry=retry_if_exception_type((KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError))
+        retry=retry_if_exception_type(
+            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
+        ),
     )
     def _setup_admin(self) -> KafkaAdminClient:
         """
@@ -128,8 +139,7 @@ class KafkaSendOperations:
         """
         try:
             return KafkaAdminClient(
-                bootstrap_servers=self._bootstrap_servers,
-                request_timeout_ms=10000
+                bootstrap_servers=self._bootstrap_servers, request_timeout_ms=10000
             )
         except (NodeNotReadyError, KafkaConnectionError, KafkaTimeoutError) as exc:
             log.error("Kafka-python retrying connection...")
@@ -138,7 +148,9 @@ class KafkaSendOperations:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
-        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+        retry=retry_if_exception_type(
+            (AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady)
+        ),
     )
     async def _setup_producer(self) -> AIOKafkaProducer:
         """
@@ -149,11 +161,15 @@ class KafkaSendOperations:
                 bootstrap_servers=self._bootstrap_servers,
                 compression_type=self._compression_type,
                 acks=self._acks,
-                request_timeout_ms=10000
+                request_timeout_ms=10000,
             )
             await asyncio.wait_for(producer.start(), 11)
             return producer
-        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+        except (
+            AsyncNodeNotReady,
+            AsyncKafkaConnectionError,
+            AsyncKafkaTimeoutError,
+        ) as exc:
             log.error("AIOKafka retrying connection...")
             raise exc
 
@@ -163,7 +179,11 @@ class KafkaSendOperations:
         """
         try:
             self._producer = await self._setup_producer()
-        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+        except (
+            AsyncNodeNotReady,
+            AsyncKafkaConnectionError,
+            AsyncKafkaTimeoutError,
+        ) as exc:
             log.error("AIOKafkaProducer could not establish a connection.")
             raise exc
 
@@ -189,7 +209,9 @@ class KafkaSendOperations:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
-        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+        retry=retry_if_exception_type(
+            (AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady)
+        ),
     )
     async def shutdown(self):
         """
@@ -197,14 +219,20 @@ class KafkaSendOperations:
         """
         try:
             await self._producer.stop()
-        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
+        except (
+            AsyncNodeNotReady,
+            AsyncKafkaConnectionError,
+            AsyncKafkaTimeoutError,
+        ) as exc:
             log.error("AIOKafka retrying shutdown procedure...")
             raise exc
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_combine(wait_fixed(2), wait_random(min=1, max=2)),
-        retry=retry_if_exception_type((AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady))
+        retry=retry_if_exception_type(
+            (AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady)
+        ),
     )
     async def send_message(
         self, topic_name: str, event: str, key: str, message: any
@@ -217,8 +245,14 @@ class KafkaSendOperations:
         ).encode()
         try:
             await self._producer.send(topic=topic_name, value=json_message)
-        except (AsyncNodeNotReady, AsyncKafkaConnectionError, AsyncKafkaTimeoutError) as exc:
-            log.error("AIOKafkaProducer could not send the data to the cluster. Retrying...")
+        except (
+            AsyncNodeNotReady,
+            AsyncKafkaConnectionError,
+            AsyncKafkaTimeoutError,
+        ) as exc:
+            log.error(
+                "AIOKafkaProducer could not send the data to the cluster. Retrying..."
+            )
             raise exc
 
 
@@ -228,14 +262,21 @@ class AsyncScheduler:
     interact with the loop.
     """
 
-    def __init__(self, loop: asyncio.AbstractEventLoop = None, thread: Thread = None, coroutine: Coroutine = None):
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop = None,
+        thread: Thread = None,
+        coroutine: Coroutine = None,
+    ):
         """
         Initializer for setting up the thread and loop running inside of it. Accepts a coroutine
         that can be run before the thread joins.
         """
         self._loop = loop if loop else asyncio.new_event_loop()
         self._napp_context = (
-            thread if thread else Thread(target=self._run_loop, daemon=True, args=(coroutine,))
+            thread
+            if thread
+            else Thread(target=self._run_loop, daemon=True, args=(coroutine,))
         )
         self._napp_context.start()
 

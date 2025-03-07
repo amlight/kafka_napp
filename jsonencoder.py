@@ -1,5 +1,6 @@
 import json
 
+
 class ComplexEncoder(json.JSONEncoder):
 
     def default(self, o):
