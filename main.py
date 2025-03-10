@@ -33,8 +33,8 @@ from kafka.errors import (
 from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
 
-from kafka_napp.jsonencoder import ComplexEncoder
-from kafka_napp.settings import (
+from .jsonencoder import ComplexEncoder
+from .settings import (
     BOOTSTRAP_SERVERS,
     ACKS,
     DEFAULT_NUM_PARTITIONS,
@@ -173,6 +173,13 @@ class KafkaSendOperations:
             log.error("AIOKafka retrying connection...")
             raise exc
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type(
+            (AsyncKafkaTimeoutError, AsyncKafkaConnectionError, AsyncNodeNotReady)
+        ),
+    )
     async def start_up(self) -> None:
         """
         AIOKafka requires a setup procedure
