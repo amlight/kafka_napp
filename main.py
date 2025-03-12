@@ -21,14 +21,6 @@ from tenacity import (
     wait_fixed,
     wait_random,
 )
-from kafka import KafkaAdminClient
-from kafka.admin.new_topic import NewTopic
-from kafka.errors import (
-    UnknownTopicOrPartitionError,
-    NodeNotReadyError,
-    KafkaConnectionError,
-    KafkaTimeoutError,
-)
 
 from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
@@ -37,8 +29,6 @@ from .jsonencoder import ComplexEncoder
 from .settings import (
     BOOTSTRAP_SERVERS,
     ACKS,
-    DEFAULT_NUM_PARTITIONS,
-    REPLICATION_FACTOR,
     TOPIC_NAME,
     COMPRESSION_TYPE,
     IGNORED_EVENTS,
@@ -115,35 +105,12 @@ class KafkaSendOperations:
         self._acks = acks
 
         self._producer: AIOKafkaProducer = None
-        self._admin = self._setup_admin()
 
     async def setup_dependencies(self):
         """
         Start an asyncio loop in a separate thread, so Kytos can synchronously close
         """
         await self.start_up()
-
-        if not await self.check_for_topic(TOPIC_NAME):
-            await self.create_topic(TOPIC_NAME, DEFAULT_NUM_PARTITIONS)
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
-        retry=retry_if_exception_type(
-            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
-        ),
-    )
-    def _setup_admin(self) -> KafkaAdminClient:
-        """
-        Setup the admin client and handle NodeNotReadyIssues
-        """
-        try:
-            return KafkaAdminClient(
-                bootstrap_servers=self._bootstrap_servers, request_timeout_ms=10000
-            )
-        except (NodeNotReadyError, KafkaConnectionError, KafkaTimeoutError) as exc:
-            log.error("Kafka-python retrying connection...")
-            raise exc
 
     @retry(
         stop=stop_after_attempt(3),
@@ -192,25 +159,6 @@ class KafkaSendOperations:
             AsyncKafkaTimeoutError,
         ) as exc:
             log.error("AIOKafkaProducer could not establish a connection.")
-            raise exc
-
-    async def create_topic(self, topic_name: str, num_partitions: int) -> None:
-        """Create a topic with a provided number of partitions"""
-        self._admin.create_topics(
-            NewTopic(
-                name=topic_name,
-                num_partitions=num_partitions,
-                replication_factor=REPLICATION_FACTOR,
-            )
-        )
-
-    async def check_for_topic(self, topic_name: str) -> bool:
-        """Checks if a topic exists"""
-        try:
-            return self._admin.describe_topics([topic_name]) is not None
-        except UnknownTopicOrPartitionError:
-            return False
-        except Exception as exc:
             raise exc
 
     @retry(

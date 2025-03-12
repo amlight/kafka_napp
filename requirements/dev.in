@@ -2,9 +2,3 @@
 -e git+https://github.com/kytos-ng/kytos.git#egg=kytos[dev]
 -e git+https://github.com/kytos-ng/of_core.git#egg=kytos_of_core
 -e .
-
--r run.in
-
-pylint==3.1.0
-pytest==8.0.1
-black==24.2.0

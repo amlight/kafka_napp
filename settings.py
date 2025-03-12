@@ -5,7 +5,7 @@ BOOTSTRAP_SERVERS = "localhost:9092"
 
 # Acknowledgements: (str | int) A setting that sets the acknowledgement of messages to Kafka.
 # Available options are 0, 1 and "all"
-ACKS = 0
+ACKS = 1
 
 # Number of partitions per topic
 DEFAULT_NUM_PARTITIONS = 1
