@@ -1,53 +1,37 @@
 from mininet.topo import Topo
 
-
 class AmlightTopo(Topo):
     """Amlight Topology."""
-
     def build(self):
         # Add switches
-        self.Ampath1 = self.addSwitch(
-            "Ampath1", listenPort=6601, dpid="0000000000000011"
-        )
-        self.Ampath2 = self.addSwitch(
-            "Ampath2", listenPort=6602, dpid="0000000000000012"
-        )
-        SouthernLight2 = self.addSwitch(
-            "SoL2", listenPort=6603, dpid="0000000000000013"
-        )
-        SanJuan = self.addSwitch("SanJuan", listenPort=6604, dpid="0000000000000014")
-        AndesLight2 = self.addSwitch("AL2", listenPort=6605, dpid="0000000000000015")
-        AndesLight3 = self.addSwitch("AL3", listenPort=6606, dpid="0000000000000016")
-        self.Ampath3 = self.addSwitch(
-            "Ampath3", listenPort=6608, dpid="0000000000000017"
-        )
-        self.Ampath4 = self.addSwitch(
-            "Ampath4", listenPort=6609, dpid="0000000000000018"
-        )
-        self.Ampath5 = self.addSwitch(
-            "Ampath5", listenPort=6610, dpid="0000000000000019"
-        )
-        self.Ampath7 = self.addSwitch(
-            "Ampath7", listenPort=6611, dpid="0000000000000020"
-        )
-        JAX1 = self.addSwitch("JAX1", listenPort=6612, dpid="0000000000000021")
-        JAX2 = self.addSwitch("JAX2", listenPort=6613, dpid="0000000000000022")
+        self.Ampath1 = self.addSwitch('Ampath1', listenPort=6601, dpid='0000000000000011')
+        self.Ampath2 = self.addSwitch('Ampath2', listenPort=6602, dpid='0000000000000012')
+        SouthernLight2 = self.addSwitch('SoL2', listenPort=6603, dpid='0000000000000013')
+        SanJuan = self.addSwitch('SanJuan', listenPort=6604, dpid='0000000000000014')
+        AndesLight2 = self.addSwitch('AL2', listenPort=6605, dpid='0000000000000015')
+        AndesLight3 = self.addSwitch('AL3', listenPort=6606, dpid='0000000000000016')
+        self.Ampath3 = self.addSwitch('Ampath3', listenPort=6608, dpid='0000000000000017')
+        self.Ampath4 = self.addSwitch('Ampath4', listenPort=6609, dpid='0000000000000018')
+        self.Ampath5 = self.addSwitch('Ampath5', listenPort=6610, dpid='0000000000000019')
+        self.Ampath7 = self.addSwitch('Ampath7', listenPort=6611, dpid='0000000000000020')
+        JAX1 = self.addSwitch('JAX1', listenPort=6612, dpid='0000000000000021')
+        JAX2 = self.addSwitch('JAX2', listenPort=6613, dpid='0000000000000022')
         # add hosts
-        h1 = self.addHost("h1", mac="00:00:00:00:00:01")
-        h2 = self.addHost("h2", mac="00:00:00:00:00:02")
-        h3 = self.addHost("h3", mac="00:00:00:00:00:03")
-        h4 = self.addHost("h4", mac="00:00:00:00:00:04")
-        h5 = self.addHost("h5", mac="00:00:00:00:00:05")
-        h6 = self.addHost("h6", mac="00:00:00:00:00:06")
-        h7 = self.addHost("h7", mac="00:00:00:00:00:07")
-        h8 = self.addHost("h8", mac="00:00:00:00:00:08")
-        h9 = self.addHost("h9", mac="00:00:00:00:00:09")
-        h10 = self.addHost("h10", mac="00:00:00:00:00:0A")
-        h11 = self.addHost("h11", mac="00:00:00:00:00:0B")
-        h12 = self.addHost("h12", mac="00:00:00:00:00:0C")
-        h13 = self.addHost("h13", mac="00:00:00:00:00:0D")
-        h14 = self.addHost("h14", mac="00:00:00:00:00:0E")
-        h15 = self.addHost("h15", mac="00:00:00:00:00:0F")
+        h1 = self.addHost('h1', mac='00:00:00:00:00:01')
+        h2 = self.addHost('h2', mac='00:00:00:00:00:02')
+        h3 = self.addHost('h3', mac='00:00:00:00:00:03')
+        h4 = self.addHost('h4', mac='00:00:00:00:00:04')
+        h5 = self.addHost('h5', mac='00:00:00:00:00:05')
+        h6 = self.addHost('h6', mac='00:00:00:00:00:06')
+        h7 = self.addHost('h7', mac='00:00:00:00:00:07')
+        h8 = self.addHost('h8', mac='00:00:00:00:00:08')
+        h9 = self.addHost('h9', mac='00:00:00:00:00:09')
+        h10 = self.addHost('h10', mac='00:00:00:00:00:0A')
+        h11 = self.addHost('h11', mac='00:00:00:00:00:0B')
+        h12 = self.addHost('h12', mac='00:00:00:00:00:0C')
+        h13 = self.addHost('h13', mac='00:00:00:00:00:0D')
+        h14 = self.addHost('h14', mac='00:00:00:00:00:0E')
+        h15 = self.addHost('h15', mac='00:00:00:00:00:0F')
         # Add links
         self.addLink(self.Ampath1, self.Ampath2, port1=1, port2=1)
         self.addLink(self.Ampath1, SouthernLight2, port1=2, port2=2)
@@ -86,10 +70,9 @@ class AmlightTopo(Topo):
 
 class AmlightLoopedTopo(AmlightTopo):
     """Amlight Topology with loops."""
-
     def build(self):
         super().build()
-        # Add loops
+        #Add loops
         self.addLink(self.Ampath1, self.Ampath1, port1=17, port2=18)
         self.addLink(self.Ampath1, self.Ampath1, port1=19, port2=20)
         self.addLink(self.Ampath4, self.Ampath4, port1=25, port2=26)
@@ -97,6 +80,6 @@ class AmlightLoopedTopo(AmlightTopo):
 
 
 topos = {
-    "amlight": (lambda: AmlightTopo()),
-    "amlight_looped": (lambda: AmlightLoopedTopo()),
+    'amlight': (lambda: AmlightTopo()),
+    'amlight_looped': (lambda: AmlightLoopedTopo()),
 }

@@ -3,7 +3,6 @@ Test suite for main.py
 """
 
 import unittest
-import time
 from unittest.mock import patch
 
 from kafka_napp.main import Main
@@ -14,29 +13,26 @@ class TestMain(unittest.TestCase):
     Test suite for main
     """
 
-    @patch("main.KytosNApp")
-    @patch("main.KafkaSendOperations.setup_dependencies")
-    def test_setup_complete(self, _, setup_mock):
+    @patch("kafka_napp.main.KafkaSendOperations.shutdown")
+    @patch("kafka_napp.main.KafkaSendOperations.start_up")
+    def test_startup_complete(self, start_mock, shutdown_mock):
         """
-        Test that the setup function correct instantiates
+        Test that the start up function correct instantiates 
         """
 
-        def mocked_setup_function():
+        async def mocked_function():
             """
             Do nothing
             """
             return
 
-        setup_mock.side_effect = mocked_setup_function
+        start_mock.side_effect = mocked_function
+        shutdown_mock.side_effect = mocked_function
 
-        target = Main()
-
-        time.sleep(1)
+        target = Main(None)
 
         self.assertIsNotNone(target._send_ops)
-        self.assertTrue(target._loop.is_running())
-        self.assertTrue(target._napp_context.is_alive())
+        self.assertTrue(target._async_loop._loop.is_running())
+        self.assertTrue(target._async_loop._napp_context.is_alive())
 
-        target._loop.call_soon_threadsafe(target._loop.stop)
-        target._napp_context.join()
-        target._loop.close()
+        target.shutdown()
