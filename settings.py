@@ -25,7 +25,7 @@ REQUEST_TIMEOUT_MS = 10_000
 
 # Allowed Retries: (int) The amount of retries that we want send_message to be allowed
 # to do if it cannot connect, cannot send a message, or a timeout occurs.
-ALLOWED_RETRIES = 100
+ALLOWED_RETRIES = 10
 
 # Number of partitions per topic
 DEFAULT_NUM_PARTITIONS = 1
