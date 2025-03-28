@@ -53,7 +53,7 @@ class Main(KytosNApp):
         self._async_loop = AsyncScheduler(coroutine=self._send_ops.shutdown())
 
         # In the threaded async loop, run setup
-        self._async_loop.run_callable_soon(self._send_ops.start_up)
+        self._ready = self._async_loop.run_coroutine(self._send_ops.start_up())
 
     def execute(self):
         """Execute once when the napp is running."""
@@ -84,6 +84,11 @@ class Main(KytosNApp):
 
         if event.name in IGNORED_EVENTS:
             return
+
+        if not self._ready.done():
+            # Coroutines are not guaranteed to happen sequentially, so we should make sure
+            # the producer is available before sending data.
+            await self._ready
 
         self._async_loop.run_coroutine(
             self._send_ops.send_message(
@@ -271,35 +276,6 @@ class AsyncScheduler:
         """
         try:
             return asyncio.run_coroutine_threadsafe(coroutine, self._loop)
-        except RuntimeError as exc:
-            raise exc
-
-    def run_callable_soon(
-        self, callable_function: Callable[..., Awaitable], *args
-    ) -> asyncio.Future:
-        """
-        REQUIRES A CALLABLE ASYNC FUNCTION
-
-        Enqueue an async callable to be executed soon in the event loop thread and immediately
-        return
-
-        This method is used for scheduling a coroutine function to run within the loop safely.
-        Example usage:
-
-            self.run_coroutine_soon(my_async_function, arg1, arg2)
-
-        Args:
-            callable_function (Callable[..., Awaitable]): The async function to execute.
-            *args: Arguments to pass to the async function.
-
-        Returns:
-            asyncio.Future: A Future representing the execution of the task.
-
-        Raises:
-            RuntimeError: If the event loop is closed.
-        """
-        try:
-            return self._loop.call_soon_threadsafe(callable_function, *args)
         except RuntimeError as exc:
             raise exc
 
