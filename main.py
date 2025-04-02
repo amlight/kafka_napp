@@ -4,7 +4,7 @@
 import json
 import asyncio
 from threading import Thread
-from typing import Coroutine, Callable, Awaitable
+from typing import Coroutine
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import (
@@ -25,8 +25,8 @@ from tenacity import (
 from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
 
-from kafka_napp.jsonencoder import ComplexEncoder
-from kafka_napp.settings import (
+from .jsonencoder import ComplexEncoder
+from .settings import (
     BOOTSTRAP_SERVERS,
     ACKS,
     ENABLE_ITEMPOTENCE,
