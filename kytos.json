@@ -1,10 +1,10 @@
 {
     "author": "kytos",
     "username": "kytos",
-    "name": "kafka",
+    "name": "kafka_napp",
     "description": "Integrates with Kafka to push events and logs",
     "version": "1.0",
-    "napp_dependencies": ["of_core", "topology"],
+    "napp_dependencies": [],
     "license": "MIT",
     "tags": [],
     "url": ""

@@ -1,8 +1,0 @@
-LICENSE
-README.md
-setup.py
-italovalcy_testnapp.egg-info/PKG-INFO
-italovalcy_testnapp.egg-info/SOURCES.txt
-italovalcy_testnapp.egg-info/dependency_links.txt
-italovalcy_testnapp.egg-info/not-zip-safe
-italovalcy_testnapp.egg-info/requires.txt

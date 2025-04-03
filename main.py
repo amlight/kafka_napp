@@ -3,26 +3,35 @@
 
 import json
 import asyncio
-import time
 from threading import Thread
-from typing import Coroutine, Callable, Awaitable
+from typing import Coroutine
 
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import NodeNotReadyError as AsyncNodeNotReady
-from kafka import KafkaAdminClient
-from kafka.admin.new_topic import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError, NodeNotReadyError
+from aiokafka.errors import (
+    NodeNotReadyError,
+    KafkaConnectionError,
+    KafkaTimeoutError
+)
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_combine,
+    wait_fixed,
+    wait_random,
+    RetryError
+)
 
-from kytos.core.rest_api import JSONResponse, Request
-from kytos.core import KytosNApp, log, rest
+from kytos.core import KytosNApp, log
 from kytos.core.helpers import alisten_to
 
 from .jsonencoder import ComplexEncoder
 from .settings import (
     BOOTSTRAP_SERVERS,
     ACKS,
-    DEFAULT_NUM_PARTITIONS,
-    REPLICATION_FACTOR,
+    ENABLE_ITEMPOTENCE,
+    REQUEST_TIMEOUT_MS,
+    ALLOWED_RETRIES,
     TOPIC_NAME,
     COMPRESSION_TYPE,
     IGNORED_EVENTS,
@@ -40,11 +49,11 @@ class Main(KytosNApp):
         """
         log.info("SETUP Kytos/Kafka")
 
-        self._send_ops = KafkaSendOperations(BOOTSTRAP_SERVERS, COMPRESSION_TYPE, ACKS)
+        self._send_ops = KafkaSendOperations()
         self._async_loop = AsyncScheduler(coroutine=self._send_ops.shutdown())
 
         # In the threaded async loop, run setup
-        self._async_loop.run_callable_soon(self._send_ops.setup_dependencies)
+        self._ready = self._async_loop.run_coroutine(self._send_ops.start_up())
 
     def execute(self):
         """Execute once when the napp is running."""
@@ -67,17 +76,6 @@ class Main(KytosNApp):
         except Exception as exc:
             log.error(exc)
 
-    @rest("/v1/", methods=["GET"])
-    def handle_get(self, request: Request) -> JSONResponse:
-        """Endpoint to return nothing."""
-        log.info("GET /v1/kafka_napp")
-        return JSONResponse({"result": "Napp is running!", "Count": self._event_count})
-
-    @rest("/v1/", methods=["POST"])
-    def handle_post(self, request: Request) -> JSONResponse:
-        """Endpoint to return nothing."""
-        return JSONResponse("Operation successful", status_code=201)
-
     @alisten_to(".*")
     async def handle_new_switch(self, event):
         """Handle the event of a new created switch"""
@@ -86,6 +84,11 @@ class Main(KytosNApp):
 
         if event.name in IGNORED_EVENTS:
             return
+
+        if not self._ready.done():
+            # Coroutines are not guaranteed to happen sequentially, so we should make sure
+            # the producer is available before sending data.
+            await self._ready
 
         self._async_loop.run_coroutine(
             self._send_ops.send_message(
@@ -99,112 +102,123 @@ class KafkaSendOperations:
     Class for sending Kafka operations
     """
 
-    def __init__(
-        self,
-        bootstrap_servers: str,
-        compression_type: str | None = None,
-        acks: int | str = None,
-    ) -> None:
-        self._bootstrap_servers = bootstrap_servers
-        self._compression_type = compression_type
-        self._acks = acks
-
+    def __init__(self) -> None:
         self._producer: AIOKafkaProducer = None
-        self._admin = self._setup_admin()
+        self._lock = asyncio.Lock()
 
-    async def setup_dependencies(self):
-        """
-        Start an asyncio loop in a separate thread, so Kytos can synchronously close
-        """
-        await self.start_up()
-
-        if not await self.check_for_topic(TOPIC_NAME):
-            await self.create_topic(TOPIC_NAME, DEFAULT_NUM_PARTITIONS)
-
-    def _setup_admin(self) -> KafkaAdminClient:
-        """
-        Setup the admin client and handle NodeNotReadyIssues
-        """
-        retries: int = 0
-
-        while retries < 3:
-            try:
-                return KafkaAdminClient(bootstrap_servers=self._bootstrap_servers)
-            except NodeNotReadyError as exc:
-                if retries >= 2:
-                    log.error("Kafka could not be reached after retrying 3 times.")
-                    raise exc
-                retries += 1
-                time.sleep(1)
-
-        return None
-
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type(
+            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
+        ),
+    )
     async def _setup_producer(self) -> AIOKafkaProducer:
         """
         Setup the producer client and handle connection issues
         """
-        retries: int = 0
+        try:
+            producer = AIOKafkaProducer(
+                bootstrap_servers=BOOTSTRAP_SERVERS,
+                compression_type=COMPRESSION_TYPE,
+                acks=ACKS,
+                enable_idempotence=ENABLE_ITEMPOTENCE,
+                request_timeout_ms=REQUEST_TIMEOUT_MS,
+            )
+            await asyncio.wait_for(producer.start(), 11)
+            return producer
+        except (
+            NodeNotReadyError,
+            KafkaConnectionError,
+            KafkaTimeoutError,
+        ) as exc:
+            log.error("AIOKafka retrying connection...")
+            raise exc
 
-        while retries < 3:
-            try:
-                producer = AIOKafkaProducer(
-                    bootstrap_servers=self._bootstrap_servers,
-                    compression_type=self._compression_type,
-                    acks=self._acks,
-                )
-                await producer.start()
-                return producer
-            except AsyncNodeNotReady as exc:
-                if retries >= 2:
-                    log.error("Kafka could not be reached after retrying 3 times.")
-                    raise exc
-                retries += 1
-                time.sleep(1)
-
-        return None
-
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type(
+            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
+        ),
+    )
     async def start_up(self) -> None:
         """
         AIOKafka requires a setup procedure
         """
-        self._producer = await self._setup_producer()
-
-    async def create_topic(self, topic_name: str, num_partitions: int) -> None:
-        """Create a topic with a provided number of partitions"""
-        self._admin.create_topics(
-            NewTopic(
-                name=topic_name,
-                num_partitions=num_partitions,
-                replication_factor=REPLICATION_FACTOR,
-            )
-        )
-
-    async def check_for_topic(self, topic_name: str) -> bool:
-        """Checks if a topic exists"""
         try:
-            return self._admin.describe_topics([topic_name]) is not None
-        except UnknownTopicOrPartitionError:
-            return False
-        except Exception as exc:
+            self._producer = await self._setup_producer()
+        except (
+            NodeNotReadyError,
+            KafkaConnectionError,
+            KafkaTimeoutError,
+        ) as exc:
+            log.error("AIOKafkaProducer could not establish a connection.")
             raise exc
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_combine(wait_fixed(2), wait_random(min=2, max=7)),
+        retry=retry_if_exception_type(
+            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
+        ),
+    )
     async def shutdown(self):
         """
         Shutdown the producer
         """
-        await self._producer.stop()
+        try:
+            await self._producer.stop()
+        except (
+            NodeNotReadyError,
+            KafkaConnectionError,
+            KafkaTimeoutError,
+        ) as exc:
+            log.error("AIOKafka retrying shutdown procedure...")
+            raise exc
 
     async def send_message(
         self, topic_name: str, event: str, key: str, message: any
     ) -> None:
         """
-        Send a message to the specified topic name
+        Wrapper function to send to the specified topic name. Guarantees chronological
+        message delivery by using a lock on the data.
+
+        Scheduled tasks must wait to acquire a lock, but are free to serialize their data.
+        This allows for some concurrency with chronological output.
         """
         json_message = json.dumps(
             {"event": event, "type": key, "message": message}, cls=ComplexEncoder
         ).encode()
 
-        await self._producer.send(topic=topic_name, value=json_message)
+        try:
+            async with self._lock:
+                await self._send_data(topic_name, json_message)
+        except RetryError:
+            log.error("Kafka could not be reached.")
+
+    @retry(
+        stop=stop_after_attempt(ALLOWED_RETRIES),
+        wait=wait_combine(wait_fixed(2), wait_random(min=1, max=5)),
+        retry=retry_if_exception_type(
+            (KafkaTimeoutError, KafkaConnectionError, NodeNotReadyError)
+        ),
+    )
+    async def _send_data(self, topic: str, value: bytes) -> None:
+        """
+        Send a message to the specified topic name. Retry on failure
+        """
+        try:
+            await self._producer.send(topic=topic, value=value)
+        except (
+            NodeNotReadyError,
+            KafkaConnectionError,
+            KafkaTimeoutError,
+        ) as exc:
+            log.error(
+                "AIOKafkaProducer could not send the data to the cluster. Retrying..."
+            )
+            raise exc
 
 
 class AsyncScheduler:
@@ -213,7 +227,12 @@ class AsyncScheduler:
     interact with the loop.
     """
 
-    def __init__(self, loop: asyncio.AbstractEventLoop = None, thread: Thread = None, coroutine: Coroutine = None):
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop = None,
+        thread: Thread = None,
+        coroutine: Coroutine = None,
+    ):
         """
         Initializer for setting up the thread and loop running inside of it. Accepts a coroutine
         that can be run before the thread joins.
@@ -232,14 +251,14 @@ class AsyncScheduler:
             coroutine (Coroutine): The function you'd like run in the event loop before the thread joins.
         """
         asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
 
-        while self._loop.is_running():
-            time.sleep(1)
+        try:
+            self._loop.run_forever()
+        finally:
+            if coroutine:
+                self._loop.run_until_complete(coroutine)
 
-        if coroutine:
-            self._loop.run_until_complete(coroutine)
-
+        self._loop.stop()
         self._loop.close()
 
     def run_coroutine(self, coroutine: Coroutine) -> asyncio.Future:
@@ -260,114 +279,6 @@ class AsyncScheduler:
         except RuntimeError as exc:
             raise exc
 
-    def _submit_coro_soon_threadsafe(
-        self, callable_function: Callable[..., Awaitable], *args
-    ) -> asyncio.Future:
-        """
-        Enqueue an async callable to be executed soon in the event loop thread.
-
-        Args:
-            callable_function (Callable[..., Awaitable]): The async function to execute.
-            *args: Arguments to pass to the async function.
-
-        Returns:
-            asyncio.Future: A Future representing the execution of the task.
-
-        Raises:
-            RuntimeError: If the event loop is closed.
-        """
-        future = asyncio.Future()
-        log.info(callable_function)
-
-        def _create_task() -> asyncio.Future:
-            """
-            Create the coroutine and return the future
-            """
-            try:
-                task = asyncio.create_task(callable_function(*args))
-                task.add_done_callback(
-                    lambda t: (
-                        future.set_result(t.result())
-                        if not t.exception()
-                        else future.set_exception(t.exception())
-                    )
-                )
-            except Exception as exc:
-                future.set_exception(exc)
-
-        try:
-            self._loop.call_soon_threadsafe(_create_task)
-        except RuntimeError as exc:
-            raise exc
-        log.info(future)
-        return future
-
-    def run_callable_soon(
-        self, callable_function: Callable[..., Awaitable], *args
-    ) -> asyncio.Future:
-        """
-        REQUIRES A CALLABLE ASYNC FUNCTION
-
-        Enqueue an async callable to be executed soon in the event loop thread and immediately
-        return
-
-        This method is used for scheduling a coroutine function to run within the loop safely.
-        Example usage:
-
-            self.run_coroutine_soon(my_async_function, arg1, arg2)
-
-        Args:
-            callable_function (Callable[..., Awaitable]): The async function to execute.
-            *args: Arguments to pass to the async function.
-
-        Returns:
-            asyncio.Future: A Future representing the execution of the task.
-
-        Raises:
-            RuntimeError: If the event loop is closed.
-        """
-        try:
-            return self._submit_coro_soon_threadsafe(callable_function, *args)
-        except RuntimeError as exc:
-            raise exc
-
-    async def run_coroutine_soon_and_wait(
-        self, callable_function: Callable[..., Awaitable], *args
-    ) -> asyncio.Future:
-        """
-        Enqueue an async callable to be executed soon in the event loop thread and immediately
-        return
-
-        This method is used for scheduling a coroutine function to run within the loop safely.
-        Example usage:
-
-            self.run_coroutine_soon(my_async_function, arg1, arg2)
-
-        Args:
-            callable_function (Callable[..., Awaitable]): The async function to execute.
-            *args: Arguments to pass to the async function.
-
-        Returns:
-            asyncio.Future: A Future representing the execution of the task.
-
-        Raises:
-            RuntimeError: If the event loop is closed.
-        """
-        try:
-            return await self._submit_coro_soon_threadsafe(callable_function, *args)
-        except RuntimeError as exc:
-            raise exc
-
-    def cancel_all_tasks(self) -> None:
-        """
-        Cancel all tasks that are pending in the asynchronous loop.
-        """
-        for task in asyncio.all_tasks(self._loop):
-            try:
-                task.cancel()
-            except Exception as exc:
-                log.warn(f"Task {task.get_name()} could not be canceled: {exc}")
-
     async def stop(self) -> None:
         """
         Calls stop() on the internal async loop
@@ -380,7 +291,7 @@ class AsyncScheduler:
         except Exception as exc:
             raise exc
 
-    def close_thread(self) -> None:
+    def close_thread(self, timeout: float = 5.0) -> None:
         """
         Calls join() on the internal thread
 
@@ -388,7 +299,7 @@ class AsyncScheduler:
             Exception: If an error occurs during the join() sequence, it will be returned.
         """
         try:
-            self._napp_context.join()
+            self._napp_context.join(timeout=timeout)
         except Exception as exc:
             raise exc
 
