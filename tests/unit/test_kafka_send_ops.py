@@ -11,8 +11,8 @@ from unittest.mock import patch, MagicMock
 from aiokafka.errors import KafkaConnectionError
 from tenacity import RetryError
 
-from kafka_napp.settings import ALLOWED_RETRIES
-from kafka_napp.main import KafkaSendOperations
+from ...settings import ALLOWED_RETRIES
+from ...managers.kafka_ops import KafkaSendOperations
 
 async def skip_sleep(*_: any) -> None:
     """ An async function to use for retry.sleep """
