@@ -1,4 +1,4 @@
-"""Main module of Kafka/Kytos Network Application.
+"""Main module of kafka_events/Kytos Network Application.
 """
 
 import asyncio
@@ -16,14 +16,14 @@ from .managers.kafka_ops import KafkaSendOperations
 
 class Main(KytosNApp):
     """
-    Main class of the Kytos/Kafka NApp.
+    Main class of the Kytos/kafka_events NApp.
     """
 
     def setup(self):
         """
-        Setup the Kafka/Kytos NApp
+        Setup the kafka_events/Kytos NApp
         """
-        log.info("SETUP Kytos/Kafka")
+        log.info("SETUP Kytos/kafka_events")
 
         self._send_ops = KafkaSendOperations()
         self._async_loop = asyncio.get_running_loop()
@@ -35,13 +35,13 @@ class Main(KytosNApp):
 
     def execute(self):
         """Execute once when the napp is running."""
-        log.info("EXECUTE Kafka/Kytos NApp")
+        log.info("EXECUTE kafka_events/Kytos NApp")
 
     def shutdown(self):
         """
         Execute when your napp is unloaded.
         """
-        log.info("SHUTDOWN Kafka/Kytos")
+        log.info("SHUTDOWN kafka_events/Kytos")
 
         for task in asyncio.all_tasks(self._async_loop):
             task.cancel()
