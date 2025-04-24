@@ -157,9 +157,9 @@ IV. Configurations in settings.py
   - DEFAULT_NUM_PARTITIONS
     - Description: Sets the default number of partitions per Kafka topic.
     - Usage: Influences the parallelism and throughput of message processing.
-  - IGNORED_EVENTS
-    - Description: Defines a set of event names that should be filtered out and not processed.
-    - Usage: Helps in ignoring events that are not relevant to the application's processing logic.
+  - RULE_SET
+    - Description: Defines a custom list of regex entries that should be *allowed*. It follows the principle of least privilege, so entries not explicitly allowed will be denied.
+    - Usage: Has the "pattern" and "type" keys, which are responsible for the string itself and how we want to handle it, respectively. It is used in RegexOperations to instantiate and compile the rules into a list.
   - REPLICATION_FACTOR
     - Description: Specifies the number of times each partition is replicated across Kafka brokers.
     - Usage: Enhances data redundancy and fault tolerance.
@@ -182,14 +182,20 @@ This folder contains the relevant domain specific classes that manage data accor
 - Mainly `async`, following conventions and directives from `kytos` advances in `asyncio`.
   - Uses the `aiokafka` framework instead of `kafka-python` or `kafka-python-ng`.
 
+2. `regex.py`
+
+- This contains the RegexOperations class, which handles regex manipulation in the context of `Kytos`.
+  - This is a necessary manager as, for example, "kytos/mef_eline.*" is not a valid regex operations out of the box. It would allow for matches like "kytos/mef_eline1234", which is not correct.
+- Currently entire synchronous, which is fine considering there is nothing to await within each method.
+
 VI. Events
 ==========
 
   1. This section describes the how and why events are to be filtered in kafka_events
 
   - Filtering
-    - Events are to be filtered using regular expressions (regex)
-      - This allows for flexibility in rejecting some or all of a given producer's events.
+    - Events are to be filtered using predefined regular expressions.
+      - In settings.py, the `RULE_SET` parameter is provided (list[dict[str, str]]). This is what is directly compiled and used to compare against all incoming `KytosEvents`
     - Some events may not be necessary to downstream consumers, thus ignoring them would reduce Kafka's burden and improve throughput.
 
 
@@ -343,15 +349,13 @@ XI. Open Questions / Future Work
 
   1. Error codes
   2. Route messages to their partitions based on key usage
-  3. When filtering events, use Regex patterns instead of Set.
-    - Eliminates redundancy by excluding all events from particular groups, instead of listing each individually.
-  4. Add endpoints that provide clients with useful data
-    - Currently the endpoints have been removed as there is no use. However, this can change with future work.
-  5. Use a TBD `async shutdown` method instead of the synchronous version
+  3. Possibly add endpoints to allow Kytos operators to re-compile regular expressions, instead of having to reload Kytos entirely
+    - This would be useful if Kytos is experiencing a high load (and is infeasible to restart) and the NApp is having trouble serializing everything. We could have an option to reload `settings.py` and make `RegexOperations` re-compile it's Pattern objects.
+  4. Use a TBD `async shutdown` method instead of the synchronous version
     - This would allow `AIOKafkaProducer` to be shut down gracefully
-  6. Use a TBD `async setup` method instead of the synchronous version
+  5. Use a TBD `async setup` method instead of the synchronous version
     - This would allow `AIOKafkaProducer` to be awaited gracefully instead of awaiting within the event listener.
-  7. If scalability becomes a concern, we can split topics are continue creating more partitions.
+  6. If scalability becomes a concern, we can split topics are continue creating more partitions.
     - How this would work would be to logically split target events into specific topics and to add a key to each exported event so they have their own partition.
     - For example, if the amount of unique events from `flow_manager` or `mef_eline` become to big to handle on one topic, we can make a separate topic for them and continue adding partitions.\
-  8. In the case of a `Kafka` outage, memory consumption could spike and cause `Kytos` to freeze if not handled properly.
+  7. In the case of a `Kafka` outage, memory consumption could spike and cause `Kytos` to freeze if not handled properly.
