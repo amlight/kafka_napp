@@ -3,15 +3,15 @@
 
 import asyncio
 
-from kytos.core import KytosNApp, log
+from kytos.core import KytosNApp, log, KytosEvent
 from kytos.core.helpers import alisten_to
 
 from .settings import (
-    TOPIC_NAME,
-    IGNORED_EVENTS
+    TOPIC_NAME
 )
 
 from .managers.kafka_ops import KafkaSendOperations
+from .managers.regex import RegexOperations
 
 
 class Main(KytosNApp):
@@ -27,6 +27,7 @@ class Main(KytosNApp):
 
         self._send_ops = KafkaSendOperations()
         self._async_loop = asyncio.get_running_loop()
+        self._rule_ops = RegexOperations()
 
         # Because the NApp partially runs in a synchronous context, we cannot block/await
         # until the producer is ready. Thus, we need to check if it's not ready in the
@@ -49,12 +50,12 @@ class Main(KytosNApp):
         # Future: shutdown the NApp asynchronously (await producer.shutdown())
 
     @alisten_to(".*")
-    async def handle_events(self, event):
+    async def handle_events(self, event: KytosEvent):
         """Handle events"""
         # Optional logging:
         # log.info(f'handle_new_switch event={event} content={event.content}')
 
-        if event.name in IGNORED_EVENTS:
+        if not self._rule_ops.is_accepted_event(event.name):
             return
 
         if not self._ready.done():
