@@ -32,7 +32,6 @@ DEFAULT_NUM_PARTITIONS = 1
 
 # Ruleset: (list[dict[str: str]]) The regex rules, specifying the pattern and it's designated type.
 RULE_SET = [
-    {"pattern": "kytos/sample_ui.*", "type": "wildcard"}, # Testing purposes
     {"pattern": "kytos/mef_eline.*", "type": "wildcard"},
     {"pattern": "kytos/of_core.*", "type": "wildcard"},
     {"pattern": "kytos/flow_manager.*", "type": "wildcard"},
