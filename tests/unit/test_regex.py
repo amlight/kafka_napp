@@ -74,4 +74,11 @@ class TestRegexOperations(unittest.TestCase):
         self.assertTrue(self.regex.is_accepted_event("kytos/flow_manager.messages.out.ofpt_barrier_request"))
         self.assertTrue(self.regex.is_accepted_event("kytos/topology.topology_loaded"))
         self.assertTrue(self.regex.is_accepted_event("kytos/of_lldp.messages.out.ofpt_packet_out"))
-    {"pattern": "kytos/maintenance.*", "type": "wildcard"}
+
+    def test_base_functionality_does_not_allow_non_core_napps(self):
+        """
+        Test that the original settings do not allow messages from non-core NApps
+        """
+        self.assertFalse(self.regex.is_accepted_event("kytos/ui.started"))
+        self.assertFalse(self.regex.is_accepted_event("kytos/of_l2ls.work"))
+        self.assertFalse(self.regex.is_accepted_event("kytos/kronos.end"))
