@@ -33,13 +33,15 @@ class TestRegexOperations(unittest.TestCase):
         """
         custom_rules: list[dict[str, str]] = [
             {"pattern": "kytos/mef_eline.*", "type": "wildcard"},
-            {"pattern": "kytos/simple_ui.work", "type": "match"}
+            {"pattern": "kytos/simple_ui.work", "type": "match"},
+            {"pattern": "kytos/*", "type": "wildcard"}
         ]
 
         rules: list[Pattern] = self.regex._setup_rules(custom_rules)
 
         self.assertEqual("kytos/mef_eline\\..*", rules[0].pattern, rules[0])
         self.assertEqual("kytos/simple_ui.work", rules[1].pattern, rules[1])
+        self.assertNotEqual("kytos/*", rules[2].pattern, rules[2])
 
     def test_wildcard_to_regex(self):
         """
@@ -52,6 +54,9 @@ class TestRegexOperations(unittest.TestCase):
         self.assertEqual("kytos/maintenance\\..*",
                          self.regex._wildcard_to_regex("kytos/maintenance.*"))
         self.assertEqual("kytos/.*", self.regex._wildcard_to_regex("kytos/*"))
+        self.assertNotEqual(
+            "kytos/.*", self.regex._wildcard_to_regex("kytos/.*")
+        ) # Should be kytos/..*
 
     def test_is_accepted_event(self):
         """
