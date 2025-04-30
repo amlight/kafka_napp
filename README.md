@@ -11,7 +11,43 @@ This NApp integrates Kafka with the Kytos SDN platform to enable event-driven me
 - Threaded asyncio loop to handle asynchronous tasks without blocking Kytos.
 - Graceful shutdown ensuring Kafka producer cleanup and event loop termination.
 
-# Directions
+# Requirements
+
+- [aiokafka](https://aiokafka.readthedocs.io/en/stable/)
+
+# Events
+
+## Subscribed
+
+- `kytos/mef_eline.*`
+- `kytos/of_core.*`
+- `kytos/flow_manager.*`
+- `kytos/topology.*`
+- `kytos/of_lldp.*`
+- `kytos/pathfinder.*`
+- `kytos/maintenance.*`
+
+# Filtering
+
+Event consumption and serialization follows the principle of `least privilege`, meaning events must be explicitly accepted to be allowed to be propagated to Kafka. Filtering logic uses `regex` to quickly accept or deny incoming events, based on preset patterns. Currently, you can use `wildcard` and `match` expressions, explained below:
+
+## Wildcard
+
+Allows all events that coming after a mandatory prefix.
+
+```
+{"pattern": "kytos/mef_eline.*", "type": "wildcard"} # Allows events like kytos/mef_eline.created, etc.
+```
+
+## Match
+
+Allows only the exact event that fits its pattern
+
+```
+{"pattern": "kytos/simple_ui.example", "type": "match"} # Explicitly allows kytos/simple_ui.example, nothing more.
+```
+
+# Development
 
 The following is a list of commands that allow you quickly download and run the NApp with Kytos. This assume that you have a MongoDB instance available.
 
