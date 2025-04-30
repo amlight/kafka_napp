@@ -30,8 +30,16 @@ ALLOWED_RETRIES = 10
 # Number of partitions per topic
 DEFAULT_NUM_PARTITIONS = 1
 
-# Ignored events ( set[str] )
-IGNORED_EVENTS = {}
+# Ruleset: (list[dict[str: str]]) The regex rules, specifying the pattern and it's designated type.
+RULE_SET = [
+    {"pattern": "kytos/mef_eline.*", "type": "wildcard"},
+    {"pattern": "kytos/of_core.*", "type": "wildcard"},
+    {"pattern": "kytos/flow_manager.*", "type": "wildcard"},
+    {"pattern": "kytos/topology.*", "type": "wildcard"},
+    {"pattern": "kytos/of_lldp.*", "type": "wildcard"},
+    {"pattern": "kytos/pathfinder.*", "type": "wildcard"}, # Possibly unnecessary
+    {"pattern": "kytos/maintenance.*", "type": "wildcard"} # Possible unnecessary
+]
 
 # Number of times the partition is replicated across brokers. Should be <= the number of brokers available
 REPLICATION_FACTOR = 1
