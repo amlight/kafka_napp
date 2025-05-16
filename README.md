@@ -52,7 +52,7 @@ To achieve match functionality, you must start and end your match with `^` and `
 
 # Endpoints
 
-## /v1/create
+## POST - /v1/filters
 
 Creates a Filter object to be used in the filtering pipeline. Requires JSON data like the following:
 
@@ -65,18 +65,31 @@ Creates a Filter object to be used in the filtering pipeline. Requires JSON data
 
 If the given pattern already exists or is an invalid regular expression, the endpoint will return a 400 status code and the exception message.
 
-## /v1/list
+The response will look like this:
+
+```
+{
+    "id": str,
+    "pattern": str,
+    "mutable": bool,
+    "description": str
+}
+```
+
+## GET /v1/filters
 
 Lists the summary of all Filter objects in the filtering pipeline. The response looks similar to the following:
 
 ```
 [
     {
+        "id": str,
         "pattern": str,
         "mutable": bool,
         "description": str
     },
     {
+        "id": str,
         "pattern": str,
         ...
     },
@@ -84,17 +97,22 @@ Lists the summary of all Filter objects in the filtering pipeline. The response 
 ]
 ```
 
-## /v1/delete
+## DELETE - /v1/filters/{filter_id}
 
-Deletes a Filter object from the filtering pipeline. Requires JSON data like the following:
+Deletes a Filter object from the filtering pipeline using its ID. Requires the filter's ID as a query parameter.
+
+If the given ID does not exist, the endpoint will return a 400 status code and the exception message. If the filter is immutable, the endpoint will return a 404 status code and the exception message.
+
+The response will look like this:
 
 ```
 {
-    "pattern": str
+    "id": str,
+    "pattern": str,
+    "mutable": bool,
+    "description": str
 }
 ```
-
-If the given pattern does not exist or is immutable, the endpoint will return a 400 status code and the exception message.
 
 # Development
 
