@@ -57,11 +57,15 @@ class Filter:
         """
         return self.mutable
 
-    def summarize(self) -> dict[str, str]:
+    def as_dict(self) -> dict[str, str]:
         """
-        Summarize the given filter
+        Summarize the given filter, returning it as a dictionary.
         
         Returns a dictionary that looks like:
         {"pattern": str, "mutable": bool, "description": str}
         """
-        return {"pattern": self.pattern, "mutable": self.mutable, "description": self.description}
+        return {
+            "pattern": self.pattern.pattern,
+            "mutable": self.mutable,
+            "description": self.description
+        }

@@ -6,7 +6,7 @@ import asyncio
 from re import error as RegexException
 
 from kytos.core import KytosNApp, log, KytosEvent, rest
-from kytos.core.rest_api import JSONResponse, Request, aget_json_or_400
+from kytos.core.rest_api import JSONResponse, Request, aget_json_or_400, HTTPException
 from kytos.core.helpers import alisten_to
 
 from .settings import (
@@ -35,6 +35,7 @@ class Main(KytosNApp):
         # Because the NApp partially runs in a synchronous context, we cannot block/await
         # until the producer is ready. Thus, we need to check if it's not ready in the
         # async contexts.
+        self._regex_ready = self._async_loop.create_task(self._rule_ops.start_up())
         self._ready = self._async_loop.create_task(self._send_ops.start_up())
 
     def execute(self):
@@ -58,11 +59,13 @@ class Main(KytosNApp):
         # Optional logging:
         # log.info(f'handle_new_switch event={event} content={event.content}')
 
-        if not self._rule_ops.is_accepted_event(event.name):
-            return
-
         if not self._ready.done():
             await self._ready
+        if not self._regex_ready.done():
+            await self._regex_ready
+
+        if not await self._rule_ops.is_accepted_event(event.name):
+            return
 
         self._async_loop.create_task(
             self._send_ops.send_message(
@@ -70,7 +73,7 @@ class Main(KytosNApp):
             )
         )
 
-    @rest("v1/create", methods=['POST'])
+    @rest("v1/filters/", methods=['POST'])
     async def create_filter(self, request: Request) -> JSONResponse:
         """
         Tests a potential filter and adds it to the rule dictionary
@@ -78,59 +81,67 @@ class Main(KytosNApp):
         Requires 1 provided value in the content section called "pattern". Accepts 1 optional
         value called "description"
         """
-        log.info("Request received at /v1/create")
-
         try:
             content = await aget_json_or_400(request)
             pattern = content.get("pattern")
             description = content.get("description", "N/A")
-            self._rule_ops.create_filter(pattern, description)
+
+            log.debug(
+                "Request received at /v1/create with pattern: %s desc: %s",
+                pattern,
+                description
+            )
+
+            filter_obj: dict[str, str] = await self._rule_ops.create_filter(pattern, description)
+            status: int = 201
 
             return JSONResponse(
-                {
-                    "status": "200",
-                    "response": f"Pattern {pattern} created with description {description}"
-                }
+                filter_obj,
+                status_code=status
             )
         except (ValueError, RegexException) as exc:
-            return JSONResponse({"status": "400", "response": exc})
+            log.debug("Exception thrown: %s", exc)
+            raise HTTPException(400, detail=str(exc))
+        except KeyError as exc:
+            log.debug("Exception thrown: %s", exc)
+            raise HTTPException(400, detail="Pattern was not provided in request body.")
 
-    @rest("v1/list", methods=['GET'])
+    @rest("v1/filters/", methods=['GET'])
     async def list_filters(self, _: Request) -> JSONResponse:
         """
         Returns a list of dictionaries that summarize the created filters.
 
         Does not require json data
         """
-        log.info("Request received at /v1/list")
+        log.debug("Request received at /v1/list")
+        status: int = 200
 
         return JSONResponse(
-            {
-                "status": "200",
-                "response": self._rule_ops.list_filters()
-            }
+            await self._rule_ops.list_filters(),
+            status_code=status
         )
 
-    @rest("v1/delete", methods=['POST'])
+    @rest("v1/filters/{filter_id}", methods=['DELETE'])
     async def delete_filter(self, request: Request) -> JSONResponse:
         """
         Checks if a given pattern is present in the rule dictionary. If it is, delete it.
         Otherwise, raise an exception and return the error to the user.
-
-        Requires 1 provided value in the content section called "pattern".
         """
-        log.info("Request received at /v1/delete")
-
         try:
-            content = await aget_json_or_400(request)
-            pattern = content.get("pattern")
-            self._rule_ops.delete_filter(pattern)
+            filter_id = request.path_params["filter_id"]
+
+            log.debug("Request received at /v1/delete/%s", filter_id)
+
+            filter_obj: dict[str, str] = await self._rule_ops.delete_filter(filter_id)
+            status: int = 200
 
             return JSONResponse(
-                {
-                    "status": "200",
-                    "response": f"Pattern {pattern} deleted."
-                }
+                    filter_obj,
+                    status_code=status
             )
-        except (KeyError, ValueError) as exc:
-            return JSONResponse({"status": "400", "response": exc})
+        except ValueError as exc:
+            log.debug("/v1/filters result: %s %s", exc, 400)
+            raise HTTPException(400, detail=str(exc))
+        except KeyError as exc:
+            log.debug("/v1/filters result: %s %s", exc, 404)
+            raise HTTPException(404, detail=str(exc))

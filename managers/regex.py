@@ -1,7 +1,8 @@
 """
 Regex suite
 """
-from re import error as RegexException
+from re import error as RegexException, Pattern, compile
+from uuid import uuid4
 
 from ..settings import RULE_SET
 from ..models.filter import Filter
@@ -12,15 +13,34 @@ class RegexOperations:
     """
 
     def __init__(self):
+        """ Must call startup """
         self._rules: dict[str, Filter] = {}
-        self._rules = self._setup_rules()
 
     @property
     def rules(self) -> dict[str, Filter]:
         """ Getter """
         return self._rules
 
-    def _delete_filter(self, rule: str) -> Filter:
+    @rules.setter
+    def rules(self, new_rules: dict[str, Filter]) -> None:
+        """ Setter """
+        if not isinstance(new_rules, dict):
+            raise ValueError("Rules must be of type dict[str, Filter].")
+        for filter_id, filter_obj in new_rules.items():
+            if not isinstance(filter_id, str):
+                raise ValueError("Rule key must be of type str")
+            if not isinstance(filter_obj, Filter):
+                raise ValueError("Rule values must be of type Filter")
+
+        self._rules = new_rules
+
+    async def start_up(self) -> None:
+        """
+        Initialize the RegexOperations instance
+        """
+        self.rules = await self._setup_rules()
+
+    async def _delete_filter(self, filter_id: str) -> Filter:
         """
         Remove a filter from the rules dictionary and return the Filter
 
@@ -29,28 +49,30 @@ class RegexOperations:
         Raises ValueError if the pattern is trying to remove an immutable Filter
         """
         try:
-            if rule not in self.rules:
+            if filter_id not in self.rules:
                 raise KeyError("Pattern does not exist.")
-            if not self.rules[rule].is_mutable():
+            if not self.rules[filter_id].is_mutable():
                 raise ValueError("Pattern cannot be removed.")
-            return self.rules.pop(rule)
+            return self.rules.pop(filter_id)
         except (KeyError, ValueError) as exc:
             raise exc
 
-    def _create_filter(self, rule: str, mutable: bool, description: str) -> Filter:
+    async def _create_filter(self, rule: str, mutable: bool, description: str) -> Filter:
         """
         Create a filter to add to the rules dictionary.
 
         If the created filter has an invalid regex pattern, return the exception
         """
         try:
-            if rule in self.rules:
-                raise ValueError("Cannot have duplicate patterns.")
+            compiled_rule: Pattern = compile(rule)
+            for filter_obj in self.rules.values():
+                if filter_obj.pattern.pattern == compiled_rule.pattern:
+                    raise ValueError("Cannot have duplicate patterns.")
             return Filter(rule, mutable, description)
         except (RegexException, ValueError) as exc:
             raise exc
 
-    def _setup_rules(self, rule_set: list[dict[str, str]] = RULE_SET) -> dict[str, Filter]:
+    async def _setup_rules(self, rule_set: list[dict[str, str]] = RULE_SET) -> dict[str, Filter]:
         """
         Setup the rules, compiling each to their regex objects
 
@@ -61,13 +83,13 @@ class RegexOperations:
         rules: dict[str, Filter] = {}
 
         for rule in rule_set:
-            rules[rule["pattern"]] = self._create_filter(
+            rules[str(uuid4().hex)] = await self._create_filter(
                 rule["pattern"], False, rule["description"]
             )
 
         return rules
 
-    def is_accepted_event(self, event: str) -> bool:
+    async def is_accepted_event(self, event: str) -> bool:
         """
         Check if a given event is accepted based on a custom ruleset. Uses regex to check for
         exact matches and wildcards.
@@ -81,37 +103,55 @@ class RegexOperations:
 
         return False
 
-    def create_filter(self, pattern: str, description: str) -> None:
+    async def create_filter(self, pattern: str, description: str) -> dict[str, str]:
         """
-        Check if a given pattern is valid, then add it to _rules
+        Check if a given pattern is valid, then add it to _rules. Returns the created filter.
 
         Raises re.error (RegexException) on compilation error
 
         Raises ValueError if the provided pattern is already present
         """
         try:
-            self.rules[pattern] = self._create_filter(pattern, True, description)
+            filter_id: str = str(uuid4().hex)
+            filter_obj: Filter = await self._create_filter(pattern, True, description)
+
+            self.rules[filter_id] = filter_obj
+
+            return await self.as_dict(filter_id, filter_obj)
         except (RegexException, ValueError) as exc:
             raise exc
 
-    def list_filters(self) -> list[dict[str, str]]:
+    async def list_filters(self) -> list[dict[str, str]]:
         """
         List the summary of each filter
 
         Returns a list of dictionaries that look like:
-        {"pattern": str, "mutable": str, "description": str}
+        [{"id": id, "pattern": str, "mutable": str, "description": str}]
         """
-        return [x.summarize() for x in self.rules.values()]
+        return [
+            await self.as_dict(
+                filter_id, filter_obj
+            ) for filter_id, filter_obj in self.rules.items()
+        ]
 
-    def delete_filter(self, pattern: str) -> None:
+    async def delete_filter(self, filter_id: str) -> dict[str, str]:
         """
-        Check if a given pattern is in rules and delete it.
+        Check if a given pattern is in rules and delete it. Returns deleted pattern as a dict.
 
         Raises KeyError if the given pattern is not present
 
         Raises ValueError if the given pattern immutable
         """
         try:
-            self._delete_filter(pattern)
+            return await self.as_dict(filter_id, await self._delete_filter(filter_id))
         except (KeyError, ValueError) as exc:
             raise exc
+
+    async def as_dict(self, filter_id: str, filter_obj: Filter) -> dict[str, str]:
+        """
+        Takes a filter id and a Filter and returns it as a dictionary
+
+        Returns dicts that look like
+        {"id": id, "pattern": str, "mutable": str,"description": str}
+        """
+        return {"id": filter_id, **filter_obj.as_dict()}

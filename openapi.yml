@@ -1,0 +1,121 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: Kytos Event Bus Publisher
+  description: NApp for filtering, serializing, and publishing KytosEvents
+servers:
+  - url: /api/kytos/kafka_events
+paths:
+  /v1/filters:
+    get:
+      summary: List all filters stored in Kytos
+      description: Get a list of dictionary objects that represent all available filters
+      operationId: listFilters
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FilterResponse'
+    post:
+      summary: Create a Filter resource on Kytos
+      description: Create a Filter resource, creating a unique ID for the filter.
+      operationId: createFilter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFilterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterResponse'
+        '400':
+          description: Invalid input - Missing pattern param, bad regex, or duplicate pattern.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPException'
+
+  /v1/filters/{filter_id}:
+    delete:
+      summary: Delete a Filter resource. This only works on mutable resources.
+      description: Delete a Filter resource. This only works on mutable resources, which are resources created manually (not created on start-up).
+      operationId: deleteFilter
+      parameters:
+        - name: filter_id
+          in: path
+          required: true
+          description: The ID of the Filter you want to delete.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterResponse'
+        '400':
+          description: Target filter is immutable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPException'
+        '404':
+          description: Target filter does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPException'
+
+components:
+  schemas:
+    FilterResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        pattern:
+          type: string
+        mutable:
+          type: boolean
+        description:
+          type: string
+      required:
+        - id
+        - pattern
+        - mutable
+        - description
+
+    CreateFilterRequest:
+      type: object
+      properties:
+        pattern:
+          type: string
+          description: Regex pattern. Should be written with Python string formatting in mind.
+        description:
+          type: string
+          description: Optional - Description for the newly created Filter resource.
+      required:
+        - pattern
+
+    HTTPException:
+      type: object
+      properties:
+        description:
+          type: string
+          description: The error response
+        code:
+          type: string
+          description: The status code
+      required:
+        - description
+        - code
