@@ -16,7 +16,6 @@ from .settings import (
 from .managers.kafka_ops import KafkaSendOperations
 from .managers.regex import RegexOperations
 
-
 class Main(KytosNApp):
     """
     Main class of the Kytos/kafka_events NApp.
@@ -92,7 +91,9 @@ class Main(KytosNApp):
                 description
             )
 
-            filter_obj: dict[str, str] = await self._rule_ops.create_filter(pattern, description)
+            filter_obj: dict[str, dict[str, str]] = await self._rule_ops.create_filter(
+                pattern, description
+            )
             status: int = 201
 
             return JSONResponse(
@@ -136,7 +137,7 @@ class Main(KytosNApp):
             status: int = 200
 
             return JSONResponse(
-                    filter_obj,
+                    {filter_id: filter_obj},
                     status_code=status
             )
         except ValueError as exc:

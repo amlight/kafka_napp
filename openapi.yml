@@ -80,20 +80,24 @@ components:
   schemas:
     FilterResponse:
       type: object
-      properties:
-        id:
-          type: string
-        pattern:
-          type: string
-        mutable:
-          type: boolean
-        description:
-          type: string
-      required:
-        - id
-        - pattern
-        - mutable
-        - description
+      description: A dictionary where each key is the Filter ID
+      additionalProperties:
+        type: object
+        description: The Filter described in dictionary format
+        properties:
+          id:
+            type: string
+          pattern:
+            type: string
+          mutable:
+            type: boolean
+          description:
+            type: string
+        required:
+          - id
+          - pattern
+          - mutable
+          - description
 
     CreateFilterRequest:
       type: object

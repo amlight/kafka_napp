@@ -103,7 +103,7 @@ class RegexOperations:
 
         return False
 
-    async def create_filter(self, pattern: str, description: str) -> dict[str, str]:
+    async def create_filter(self, pattern: str, description: str) -> dict[str, dict[str, str]]:
         """
         Check if a given pattern is valid, then add it to _rules. Returns the created filter.
 
@@ -117,21 +117,19 @@ class RegexOperations:
 
             self.rules[filter_id] = filter_obj
 
-            return await self.as_dict(filter_id, filter_obj)
+            return {filter_id: filter_obj.as_dict()}
         except (RegexException, ValueError) as exc:
             raise exc
 
-    async def list_filters(self) -> list[dict[str, str]]:
+    async def list_filters(self) -> list[dict[str, dict[str, str]]]:
         """
         List the summary of each filter
 
         Returns a list of dictionaries that look like:
-        [{"id": id, "pattern": str, "mutable": str, "description": str}]
+        [str: {"pattern": str, "mutable": str, "description": str}, ...]
         """
         return [
-            await self.as_dict(
-                filter_id, filter_obj
-            ) for filter_id, filter_obj in self.rules.items()
+            {filter_id: filter_obj.as_dict()} for filter_id, filter_obj in self.rules.items()
         ]
 
     async def delete_filter(self, filter_id: str) -> dict[str, str]:
@@ -143,15 +141,6 @@ class RegexOperations:
         Raises ValueError if the given pattern immutable
         """
         try:
-            return await self.as_dict(filter_id, await self._delete_filter(filter_id))
+            return (await self._delete_filter(filter_id)).as_dict()
         except (KeyError, ValueError) as exc:
             raise exc
-
-    async def as_dict(self, filter_id: str, filter_obj: Filter) -> dict[str, str]:
-        """
-        Takes a filter id and a Filter and returns it as a dictionary
-
-        Returns dicts that look like
-        {"id": id, "pattern": str, "mutable": str,"description": str}
-        """
-        return {"id": filter_id, **filter_obj.as_dict()}

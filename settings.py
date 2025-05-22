@@ -1,4 +1,4 @@
-"""Module with the Constants used in the kafka_napp."""
+"""Module with the Constants used in the kafka_events."""
 
 # Location of the Kafka server
 BOOTSTRAP_SERVERS = "localhost:9092"
