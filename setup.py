@@ -24,7 +24,7 @@ BASE_ENV = Path(os.environ.get('VIRTUAL_ENV', '/'))
 
 NAPP_USERNAME = 'kytos'
 NAPP_VERSION = '1.0.0'
-NAPP_NAME = "kafka_napp"
+NAPP_NAME = "kafka_events"
 
 # Kytos var folder
 VAR_PATH = BASE_ENV / 'var' / 'lib' / 'kytos'
