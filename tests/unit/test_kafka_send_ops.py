@@ -27,7 +27,7 @@ async def throw_exception(**_):
 class TestKafkaSendOperations(unittest.TestCase):
     """ Test suite for KafkaSendOperations """
 
-    @patch("kafka_napp.main.AIOKafkaProducer")
+    @patch("kafka_napp.managers.kafka_ops.AIOKafkaProducer")
     def test_setup_producer_retries(self, producer_mock_cls):
         """
         Test that the producer will retry 3 times (by default)

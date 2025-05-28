@@ -100,9 +100,12 @@ class TestRegexOperations(unittest.TestCase):
         async def run_test() -> None:
             """ Wrapper to run async tests """
             self.assertFalse(await self.regex.is_accepted_event("base/simple_ui.not_added"))
-            filter_obj: dict[str, str] = await self.regex.create_filter("^base/simple_ui.not_added$", "N/A")
+            filter_obj: dict[str, dict[str, str]] = await self.regex.create_filter("^base/simple_ui.not_added$", "N/A")
             self.assertTrue(await self.regex.is_accepted_event("base/simple_ui.not_added"))
-            self.assertTrue(filter_obj["id"] in self.regex.rules)
+
+            filter_uuid: str = next(iter(filter_obj)) # Get the root key UUID
+
+            self.assertTrue(filter_uuid in self.regex.rules)
 
         asyncio.run(run_test())
 
@@ -112,13 +115,16 @@ class TestRegexOperations(unittest.TestCase):
         """
         async def run_test() -> None:
             """ Wrapper to run async tests """
-            filter_obj: dict[str, str] = await self.regex.create_filter("^base/simple_ui.not_added$", "N/A")
+            filter_obj: dict[str, dict[str, str]] = await self.regex.create_filter("^base/simple_ui.not_added$", "N/A")
             self.assertTrue(await self.regex.is_accepted_event("base/simple_ui.not_added"))
-            self.assertTrue(filter_obj["id"] in self.regex.rules)
 
-            await self.regex.delete_filter(filter_obj["id"])
+            filter_uuid: str = next(iter(filter_obj))
+
+            self.assertTrue(filter_uuid in self.regex.rules)
+
+            await self.regex.delete_filter(filter_uuid)
             self.assertFalse(await self.regex.is_accepted_event("base/simple_ui.not_added"))
-            self.assertFalse(filter_obj["id"] in self.regex.rules)
+            self.assertFalse(filter_uuid in self.regex.rules)
 
         asyncio.run(run_test())
 
@@ -140,15 +146,13 @@ class TestRegexOperations(unittest.TestCase):
         """
         async def run_test() -> None:
             """ Wrapper to run async tests """
-            immutable_id: str = ""
+            immutable_id: str = next(iter(self.regex.rules))
 
-            for key in self.regex.rules:
-                # Get the first key in the dictionary.
-                immutable_id = key
-                break
-
-            filter_obj = await self.regex.create_filter("test[./]something[./](.*)", "Test")
-            await self.regex.delete_filter(filter_obj["id"])
+            filter_obj: dict[str, dict[str, str]] = await self.regex.create_filter(
+                "test[./]something[./](.*)", "Test"
+            )
+            filter_uuid: str = next(iter(filter_obj))
+            await self.regex.delete_filter(filter_uuid)
 
             with self.assertRaises(ValueError):
                 await self.regex.delete_filter(immutable_id)
