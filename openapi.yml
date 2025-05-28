@@ -85,8 +85,6 @@ components:
         type: object
         description: The Filter described in dictionary format
         properties:
-          id:
-            type: string
           pattern:
             type: string
           mutable:
@@ -94,7 +92,6 @@ components:
           description:
             type: string
         required:
-          - id
           - pattern
           - mutable
           - description
